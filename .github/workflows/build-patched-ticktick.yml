@@ -30,9 +30,12 @@ jobs:
 
       - name: Download TickTick Setup
         shell: pwsh
+        env:
+          APP_URL: ${{ inputs.app_url }}
         run: |
-          Write-Host "Downloading target file from ${{ inputs.app_url }}..."
-          Invoke-WebRequest -Uri "${{ inputs.app_url }}" -OutFile "TickTick.exe"
+          $appUrl = $env:APP_URL.Trim('"')
+          Write-Host "Downloading target file from $appUrl..."
+          Invoke-WebRequest -Uri $appUrl -OutFile "TickTick.exe"
 
       - name: Run Patcher
         # We can just build and run directly via dotnet run
