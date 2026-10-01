@@ -31,8 +31,55 @@ jobs:
       - name: Download TickTick Setup
         shell: pwsh
         run: |
-          Write-Host "Downloading target file from ${{ inputs.app_url }}..."
-          Invoke-WebRequest -Uri "${{ inputs.app_url }}" -OutFile "TickTick.exe"
+          $appUrl = "${{ inputs.app_url }}".Trim().Trim('"')
+
+          function Test-PortableExecutable([string]$Path) {
+            if (-not (Test-Path $Path)) {
+              return $false
+            }
+
+            $header = Get-Content -Path $Path -AsByteStream -ReadCount 2 -TotalCount 2
+            return $header.Count -eq 2 -and $header[0] -eq 0x4D -and $header[1] -eq 0x5A
+          }
+
+          Write-Host "Downloading target file from $appUrl..."
+          Invoke-WebRequest -Uri $appUrl -OutFile "TickTick.exe"
+
+          if (-not (Test-PortableExecutable "TickTick.exe")) {
+            Write-Warning "Downloaded file is not a Windows executable. Attempting to resolve a direct download URL..."
+            Remove-Item -Path "TickTick.exe" -ErrorAction SilentlyContinue
+
+            $response = Invoke-WebRequest -Uri $appUrl
+            $candidateUris = @()
+
+            foreach ($link in $response.Links) {
+              if (-not [string]::IsNullOrWhiteSpace($link.href)) {
+                $candidateUri = [Uri]::new([Uri]$appUrl, $link.href).AbsoluteUri
+                if ($candidateUri -ne $appUrl) {
+                  $candidateUris += $candidateUri
+                }
+              }
+            }
+
+            $downloadSucceeded = $false
+            foreach ($candidateUri in ($candidateUris | Select-Object -Unique)) {
+              try {
+                Write-Host "Trying candidate download URL: $candidateUri"
+                Invoke-WebRequest -Uri $candidateUri -OutFile "TickTick.exe"
+                if (Test-PortableExecutable "TickTick.exe") {
+                  $downloadSucceeded = $true
+                  break
+                }
+              }
+              catch {
+                continue
+              }
+            }
+
+            if (-not $downloadSucceeded) {
+              throw "Unable to download a valid Windows executable from '$appUrl'. Please provide a direct file URL."
+            }
+          }
 
       - name: Run Patcher
         # We can just build and run directly via dotnet run
